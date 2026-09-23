@@ -1,0 +1,74 @@
+name: Build AlQiri APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Extract project ZIP
+        run: |
+          set -e
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "No project ZIP found"
+            exit 1
+          fi
+
+          echo "Using: $ZIP_FILE"
+          rm -rf project
+          mkdir project
+          unzip -q "$ZIP_FILE" -d project
+
+          test -f project/settings.gradle.kts
+          test -d project/app
+
+          echo "Project extracted successfully"
+
+      - name: Prepare Android SDK
+        run: |
+          set -e
+
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager | sort | tail -n 1)
+
+          test -n "$SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Build debug APK
+        run: |
+          cd project
+          gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AlQiri-debug-APK
+          path: project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
